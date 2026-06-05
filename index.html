@@ -830,10 +830,24 @@ function renderRanking(){
   el.innerHTML=html+'</tbody></table>';
 }
 function updateStats(){
+  // Jogos finalizados
   document.getElementById("stj").textContent=allJogos().filter(function(j){return resultados[j.id]&&resultados[j.id].gA!==undefined;}).length;
-  var ps=Object.entries(palpites).filter(function(e){return !e[1]._removido;});
-  document.getElementById("stp").textContent=ps.length;
-  document.getElementById("stpal").textContent=ps.reduce(function(a,e){return a+Object.keys(e[1]).filter(function(k){return k[0]!=="_";}).length;},0);
+  // Participantes = todos usuarios ativos (nao desabilitados), excluindo admin
+  var todosUids = new Set();
+  Object.entries(usuarios).forEach(function(e){
+    if(!e[1].desabilitado) todosUids.add(e[0]);
+  });
+  Object.keys(palpites).forEach(function(uid){
+    if(!palpites[uid]._removido) todosUids.add(uid);
+  });
+  document.getElementById("stp").textContent=todosUids.size;
+  // Total de palpites registrados
+  var totalPal=0;
+  todosUids.forEach(function(uid){
+    var p=palpites[uid]||{};
+    totalPal+=Object.keys(p).filter(function(k){return k[0]!=="_";}).length;
+  });
+  document.getElementById("stpal").textContent=totalPal;
 }
 
 // ═══════════════════════════════════════════════════════════════
