@@ -5,30 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bolão Copa do Mundo 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- Firebase compat SDK — funciona em file://, http:// e https:// -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script>
-(function(){
-  var cfg = {
-    apiKey: "AIzaSyDkWs0LnvdLq_KEHnWRevcZczlTlg6NsOI",
-    authDomain: "bolao-copa-26-1fase.firebaseapp.com",
-    projectId: "bolao-copa-26-1fase",
-    storageBucket: "bolao-copa-26-1fase.firebasestorage.app",
-    messagingSenderId: "1092212522807",
-    appId: "1:1092212522807:web:b0d47bb855f96d7c41a4b2"
-  };
-  try {
-    firebase.initializeApp(cfg);
-    var db = firebase.firestore();
-    // Adapta para a mesma interface que o restante do codigo usa
-    window._db = db;
-    window._fbCompat = true;
-    window._firebaseReady = true;
-    document.dispatchEvent(new Event("firebaseReady"));
-  } catch(e) { console.warn("Firebase nao iniciou:", e.message); }
-})();
-</script>
+<!-- Banco de dados: JSONBin.io via fetch REST -->
 <style>
 :root {
   --verde:#006600;--verde2:#009900;--amarelo:#FFCC00;--azul:#003087;
@@ -408,37 +385,129 @@ const ADMIN_NOME       = "JP (Admin)";
 function lsGet(k){try{return JSON.parse(localStorage.getItem("bolao_"+k)||"null");}catch{return null;}}
 function lsSet(k,v){try{localStorage.setItem("bolao_"+k,JSON.stringify(v));}catch{}}
 
-// Firebase compat SDK — funciona em file://, http e https
+// ─── JSONBin.io — banco de dados REST gratuito ───────────────────────────
+// Funciona em qualquer host (GitHub Pages, file://, http, https)
+// sem SDK, sem CORS, sem configuração de domínio.
+//
+// COMO CONFIGURAR (1 vez, grátis):
+//   1. Acesse jsonbin.io e clique em Sign Up (grátis)
+//   2. Vá em API Keys e copie sua Master Key
+//   3. Cole abaixo em JSONBIN_KEY
+//   4. Clique em New Bin, nomeie "bolao" e copie o ID
+//   5. Cole abaixo em JSONBIN_BIN_ID
+//
+const JSONBIN_KEY   = "$2a$10$8NPoQe5oBiD0Y1CNIpvEv.rskMKAGRrFY/jzCQMZ14A1mO6/NilYO";
+const JSONBIN_BIN_ID = "6a22fd6df5f4af5e29beda31";
+const JSONBIN_URL   = "https://api.jsonbin.io/v3/b/" + JSONBIN_BIN_ID;
+
+// Estrutura do banco: um único objeto JSON com todas as coleções
+// { palpites:{}, resultados:{}, usuarios:{}, faseConfig:{}, jogosCustom:{} }
+var _dbCache = null;       // cache local
+var _saveTimer = null;     // debounce para não gravar a cada tecla
+var _dbReady = false;
+
+async function _dbLoad(){
+  if(_dbCache) return _dbCache;
+  try {
+    const r = await fetch(JSONBIN_URL + "/latest", {
+      headers:{
+        "X-Master-Key": JSONBIN_KEY,
+        "X-Bin-Meta": "false"
+      }
+    });
+    if(r.status === 401) throw new Error("Master Key incorreta — verifique JSONBIN_KEY no código");
+    if(r.status === 403) throw new Error("Acesso negado ao Bin — verifique JSONBIN_BIN_ID");
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    _dbCache = j.record || {};
+    _dbReady = true;
+    console.log("JSONBin: conectado com sucesso ✓");
+  } catch(e) {
+    console.warn("JSONBin load:", e.message);
+    console.info("Usando localStorage como fallback");
+    _dbCache = {};
+  }
+  // garante estrutura mínima
+  ["palpites","resultados","usuarios","faseConfig","jogosCustom"].forEach(k=>{
+    if(!_dbCache[k]) _dbCache[k] = {};
+  });
+  return _dbCache;
+}
+
+async function _dbSave(){
+  if(!_dbCache) return;
+  try {
+    const r = await fetch(JSONBIN_URL, {
+      method:"PUT",
+      headers:{
+        "Content-Type":"application/json",
+        "X-Master-Key": JSONBIN_KEY
+      },
+      body: JSON.stringify(_dbCache)
+    });
+    if(!r.ok) console.warn("JSONBin save erro HTTP:", r.status);
+  } catch(e){ console.warn("JSONBin save:", e.message); }
+}
+
+function _scheduleSave(){
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_dbSave, 800); // grava 800ms após a última alteração
+}
+
+// Interface compatível com o restante do código
+async function saveData(col, id, data){
+  // Sempre salva localmente primeiro (instantâneo)
+  const s = lsGet(col)||{}; s[id]=data; lsSet(col,s);
+  // Atualiza cache e agenda gravação remota
+  if(!_dbCache) await _dbLoad();
+  if(!_dbCache[col]) _dbCache[col]={};
+  _dbCache[col][id] = data;
+  _scheduleSave();
+}
+
+function loadCollection(col){ return lsGet(col)||{}; }
+
+// Sincroniza dados do JSONBin para o localStorage e dispara callbacks
+async function _syncFromRemote(){
+  const db = await _dbLoad();
+  // Mescla remoto → localStorage (remoto tem precedência)
+  ["palpites","resultados","usuarios","faseConfig","jogosCustom"].forEach(col=>{
+    if(Object.keys(db[col]||{}).length > 0){
+      lsSet(col, db[col]);
+    }
+  });
+  return db;
+}
+
+// Substitui fbListen: faz poll a cada 15s para atualizar dados entre usuários
+var _pollTimers = {};
+function fbListen(col, cb){
+  // Dispara imediatamente com dados locais
+  const local = lsGet(col)||{};
+  if(Object.keys(local).length > 0) cb(local);
+  // Poll remoto
+  async function poll(){
+    try {
+      const db = await _syncFromRemote();
+      const data = db[col]||{};
+      lsSet(col, data);
+      cb(data);
+    } catch(e){ /* sem internet — usa local */ }
+  }
+  poll(); // primeira chamada
+  _pollTimers[col] = setInterval(poll, 15000); // atualiza a cada 15s
+}
+
+// Compat — não usados mais mas chamados em alguns lugares
 async function fbSet(path,data){
-  if(!window._firebaseReady)return;
-  try{
-    var parts=path.split("/");
-    await window._db.collection(parts[0]).doc(parts[1]).set(data,{merge:true});
-  }catch(e){console.warn("fbSet:",e.message);}
+  const [col,id] = path.split("/");
+  await saveData(col,id,data);
 }
 async function fbGet(path){
-  if(!window._firebaseReady)return null;
-  try{
-    var parts=path.split("/");
-    var snap=await window._db.collection(parts[0]).doc(parts[1]).get();
-    return snap.exists?snap.data():null;
-  }catch(e){console.warn("fbGet:",e.message);return null;}
+  const [col,id] = path.split("/");
+  const db = await _dbLoad();
+  return (db[col]||{})[id]||null;
 }
-function fbListen(col,cb){
-  if(!window._firebaseReady)return;
-  try{
-    window._db.collection(col).onSnapshot(function(snap){
-      var d={};
-      snap.forEach(function(s){d[s.id]=s.data();});
-      lsSet(col,d);cb(d);
-    });
-  }catch(e){console.warn("fbListen:",e.message);}
-}
-async function saveData(col,id,data){
-  const s=lsGet(col)||{};s[id]=data;lsSet(col,s);
-  fbSet(col+"/"+id,data).catch(()=>{});
-}
-function loadCollection(col){return lsGet(col)||{};}
 
 function aplicarJogosCustom(data){
   jogosCustom={};
@@ -478,7 +547,7 @@ function sha256(str){
     }
   }
   str+='';
-  while(str[lengthProperty]%64-56)str+=' ';
+  while(str[lengthProperty]%64-56)str+=' ';
   for(i=0;i<str[lengthProperty];i++){
     j=str.charCodeAt(i);
     if(j>>8)return;
@@ -566,18 +635,17 @@ async function fazerLogin(){
     // Lê localmente (sempre funciona, mesmo sem internet)
     usuarios = loadCollection('usuarios');
 
-    // Tenta buscar do Firebase em background (sem bloquear)
-    if(window._firebaseReady){
-      try {
-        const fb = await fbGet('usuarios/'+uid);
-        if(fb && fb.senha){
-          usuarios[uid] = fb;
-          const tmp = lsGet('usuarios')||{};
-          tmp[uid] = fb;
-          lsSet('usuarios', tmp);
-        }
-      } catch(e){ /* Firebase falhou - usa local */ }
-    }
+    // Tenta buscar remoto (JSONBin) em background
+    try {
+      const fb = await Promise.race([
+        fbGet('usuarios/'+uid),
+        new Promise((_,r) => setTimeout(()=>r(new Error('to')),3000))
+      ]);
+      if(fb && fb.senha){
+        usuarios[uid]=fb;
+        const tmp=lsGet('usuarios')||{}; tmp[uid]=fb; lsSet('usuarios',tmp);
+      }
+    } catch(e){ /* offline ou timeout — usa local */ }
 
     const ex = usuarios[uid];
 
@@ -1182,18 +1250,8 @@ function start(){
   showLogin();
 }
 
-// Aguarda Firebase OU inicia após 3s (funciona sem Firebase também)
-let _fbStarted = false;
-function _iniciar(){
-  if(_fbStarted) return;
-  _fbStarted = true;
-  start();
-}
-if(window._firebaseReady){ _iniciar(); }
-else{
-  document.addEventListener('firebaseReady', _iniciar);
-  setTimeout(_iniciar, 3000);
-}
+// Inicia o sistema (JSONBin — sem dependência de SDK externo)
+start();
 
 // Enter no login
 document.addEventListener('keypress', function(e){
