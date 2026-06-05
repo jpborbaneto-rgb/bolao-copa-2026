@@ -638,8 +638,20 @@ function initApp(){
 
   // Registra listeners para sincronização em tempo real
   dbListen("usuarios",   function(d){ usuarios=d;   if(isAdmin)renderUsers(); renderPremiacao(); });
-  dbListen("palpites",   function(d){ palpites=d;   renderPalpites(); renderRanking(); updateStats(); if(isAdmin)renderResultados(); });
-  dbListen("resultados", function(d){ resultados=d; renderPalpites(); renderRanking(); renderJogosView(); if(isAdmin)renderResultados(); });
+  dbListen("palpites",   function(d){
+    palpites=d;
+    // Garante que resultados tbm está atualizado antes de renderizar o ranking
+    var r=lsGet("resultados"); if(r) resultados=r;
+    renderPalpites(); renderRanking(); updateStats();
+    if(isAdmin)renderResultados();
+  });
+  dbListen("resultados", function(d){
+    resultados=d;
+    // Garante que palpites tbm está atualizado antes de renderizar o ranking
+    var p=lsGet("palpites"); if(p) palpites=p;
+    renderPalpites(); renderRanking(); renderJogosView();
+    if(isAdmin)renderResultados();
+  });
   dbListen("faseConfig", function(d){ faseConfig=d; renderPalpites(); renderJogosView(); if(isAdmin)renderFaseControle(); });
   dbListen("jogosCustom",function(d){ jogosCustom=d; jCustom=d; renderPalpites(); renderJogosView(); if(isAdmin){renderResultados();renderEditaTimes();} });
 
@@ -785,14 +797,20 @@ function renderJogosView(){
 function renderRanking(){
   var el=document.getElementById("rkc");
   var comR=allJogos().filter(function(j){return resultados[j.id]&&resultados[j.id].gA!==undefined;});
-  if(!comR.length){ el.innerHTML='<div class="es"><div class="ic">⏳</div><p>Ranking disponível após os primeiros resultados.</p></div>'; return; }
+  // Mostra participantes mesmo sem resultados (todos com 0 pts)
+  var semResultados = !comR.length;
   var rank=[];
-  Object.entries(palpites).forEach(function(e){
-    var uid=e[0],pal=e[1];
-    if(pal._removido)return;
+  // Inclui todos os usuários cadastrados (com ou sem palpites)
+  var todosUids = new Set();
+  Object.keys(usuarios).forEach(function(uid){ if(!usuarios[uid].desabilitado) todosUids.add(uid); });
+  Object.keys(palpites).forEach(function(uid){ if(!palpites[uid]._removido) todosUids.add(uid); });
+  todosUids.forEach(function(uid){
+    var pal = palpites[uid] || {};
+    if(pal._removido) return;
+    var nome = pal._nome || (usuarios[uid] && usuarios[uid].nomeCompleto) || uid;
     var pts=0,ex=0,vc=0;
     comR.forEach(function(j){var pt=calcPts(pal[j.id],resultados[j.id]);pts+=pt;if(pt===3)ex++;if(pt===1)vc++;});
-    rank.push({uid:uid,nome:pal._nome||uid,pts:pts,ex:ex,vc:vc});
+    rank.push({uid:uid,nome:nome,pts:pts,ex:ex,vc:vc});
   });
   rank.sort(function(a,b){return b.pts-a.pts||b.ex-a.ex;});
   var html='<table class="rt"><thead><tr><th>#</th><th>Participante</th><th>Pts</th><th>Exatos</th><th>Vencedor</th></tr></thead><tbody>';
@@ -806,6 +824,9 @@ function renderRanking(){
       '<td style="color:var(--verde);font-weight:700">'+p.ex+'</td>'+
       '<td style="color:#e65100;font-weight:600">'+p.vc+'</td></tr>';
   });
+  if(semResultados){
+    html+='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--cinza3);font-size:13px">⏳ Pontuação disponível após o primeiro resultado ser inserido</td></tr>';
+  }
   el.innerHTML=html+'</tbody></table>';
 }
 function updateStats(){
@@ -1078,7 +1099,14 @@ function showTab(t,el){
   document.querySelectorAll(".tc").forEach(function(x){x.classList.remove("active");});
   document.getElementById("tc-"+t).classList.add("active");
   el.classList.add("active");
-  if(t==="ranking"){renderRanking();updateStats();}
+  if(t==="ranking"){
+    // Busca dados frescos do servidor antes de renderizar
+    var p=lsGet("palpites"); if(p) palpites=p;
+    var r=lsGet("resultados"); if(r) resultados=r;
+    renderRanking(); updateStats();
+    // Força poll imediato para garantir dados mais recentes
+    _poll();
+  }
   if(t==="jogos")renderJogosView();
   if(t==="premiacao")renderPremiacao();
   if(t==="admin"&&isAdmin){renderFaseControle();renderEditaTimes();renderResultados();renderResetFase();renderUsers();}
