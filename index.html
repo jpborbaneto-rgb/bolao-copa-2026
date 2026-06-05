@@ -381,133 +381,140 @@ const FASES_ORDEM = ["Fase de Grupos","Oitavas de Final","Quartas de Final","Sem
 function lsGet(k){try{return JSON.parse(localStorage.getItem("bolao_"+k)||"null");}catch{return null;}}
 function lsSet(k,v){try{localStorage.setItem("bolao_"+k,JSON.stringify(v));}catch{}}
 
-// ─── JSONBin.io — banco de dados REST gratuito ───────────────────────────
-// Funciona em qualquer host (GitHub Pages, file://, http, https)
-// sem SDK, sem CORS, sem configuração de domínio.
-//
-// COMO CONFIGURAR (1 vez, grátis):
-//   1. Acesse jsonbin.io e clique em Sign Up (grátis)
-//   2. Vá em API Keys e copie sua Master Key
-//   3. Cole abaixo em JSONBIN_KEY
-//   4. Clique em New Bin, nomeie "bolao" e copie o ID
-//   5. Cole abaixo em JSONBIN_BIN_ID
-//
-const JSONBIN_KEY   = "$2a$10$8NPoQe5oBiD0Y1CNIpvEv.rskMKAGRrFY/jzCQMZ14A1mO6/NilYO";
+// ─── BANCO DE DADOS: JSONBin.io ─────────────────────────────────────────────
+// Um único objeto JSON remoto. Uma leitura, uma gravação. Sem conflito de coleções.
+const JSONBIN_KEY    = "$2a$10$8NPoQe5oBiD0Y1CNIpvEv.rskMKAGRrFY/jzCQMZ14A1mO6/NilYO";
 const JSONBIN_BIN_ID = "6a22fd6df5f4af5e29beda31";
-const JSONBIN_URL   = "https://api.jsonbin.io/v3/b/" + JSONBIN_BIN_ID;
+const JSONBIN_URL    = "https://api.jsonbin.io/v3/b/" + JSONBIN_BIN_ID;
+const COLS = ["palpites","resultados","usuarios","faseConfig","jogosCustom"];
 
-// Estrutura do banco: um único objeto JSON com todas as coleções
-// { palpites:{}, resultados:{}, usuarios:{}, faseConfig:{}, jogosCustom:{} }
-var _dbCache = null;       // cache local
-var _saveTimer = null;     // debounce para não gravar a cada tecla
-var _dbReady = false;
+var _cache      = null;   // espelho do JSONBin em memória
+var _saveTimer  = null;   // debounce de gravação
+var _callbacks  = {};     // { col: [fn, fn, ...] }
+var _pollTimer  = null;   // timer único de poll
+var _lastEtag   = null;   // evita processar resposta igual
 
-async function _dbLoad(){
-  if(_dbCache) return _dbCache;
+// ── Leitura remota ──────────────────────────────────────────────────────────
+async function _remoteLoad(){
+  var headers = {"X-Master-Key": JSONBIN_KEY, "X-Bin-Meta": "false"};
+  if(_lastEtag) headers["If-None-Match"] = _lastEtag;
   try {
-    const r = await fetch(JSONBIN_URL + "/latest", {
-      headers:{
-        "X-Master-Key": JSONBIN_KEY,
-        "X-Bin-Meta": "false"
-      }
-    });
-    if(r.status === 401) throw new Error("Master Key incorreta — verifique JSONBIN_KEY no código");
-    if(r.status === 403) throw new Error("Acesso negado ao Bin — verifique JSONBIN_BIN_ID");
-    if(!r.ok) throw new Error("HTTP " + r.status);
-    const j = await r.json();
-    _dbCache = j.record || {};
-    _dbReady = true;
-    console.log("JSONBin: conectado com sucesso ✓");
-  } catch(e) {
-    console.warn("JSONBin load:", e.message);
-    console.info("Usando localStorage como fallback");
-    _dbCache = {};
+    var r = await fetch(JSONBIN_URL + "/latest", {headers: headers});
+    if(r.status === 304) return _cache;          // não mudou
+    if(!r.ok){ console.warn("JSONBin GET", r.status); return _cache||{}; }
+    _lastEtag = r.headers.get("ETag") || null;
+    var j = await r.json();
+    return j.record || {};
+  } catch(e){
+    console.warn("JSONBin GET falhou:", e.message);
+    return _cache || {};
   }
-  // garante estrutura mínima
-  ["palpites","resultados","usuarios","faseConfig","jogosCustom"].forEach(k=>{
-    if(!_dbCache[k]) _dbCache[k] = {};
-  });
-  return _dbCache;
 }
 
-async function _dbSave(){
-  if(!_dbCache) return;
+// ── Gravação remota ─────────────────────────────────────────────────────────
+async function _remoteSave(){
+  if(!_cache) return;
   try {
-    const r = await fetch(JSONBIN_URL, {
-      method:"PUT",
-      headers:{
-        "Content-Type":"application/json",
-        "X-Master-Key": JSONBIN_KEY
-      },
-      body: JSON.stringify(_dbCache)
+    var r = await fetch(JSONBIN_URL, {
+      method: "PUT",
+      headers: {"Content-Type":"application/json","X-Master-Key": JSONBIN_KEY},
+      body: JSON.stringify(_cache)
     });
-    if(!r.ok) console.warn("JSONBin save erro HTTP:", r.status);
-  } catch(e){ console.warn("JSONBin save:", e.message); }
+    if(r.ok){
+      console.log("JSONBin gravado ✓");
+    } else {
+      console.warn("JSONBin PUT", r.status);
+    }
+  } catch(e){ console.warn("JSONBin PUT falhou:", e.message); }
 }
 
 function _scheduleSave(){
   clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(_dbSave, 800); // grava 800ms após a última alteração
+  _saveTimer = setTimeout(_remoteSave, 600);
 }
 
-// Interface compatível com o restante do código
+// ── Aplicar dados remotos: atualiza cache, localStorage e dispara callbacks ─
+function _applyRemote(remote){
+  if(!remote) return;
+  COLS.forEach(function(col){
+    var remoteCol = remote[col] || {};
+    var localCol  = _cache ? (_cache[col]||{}) : {};
+    // Mescla: remoto tem precedência chave por chave
+    var merged = Object.assign({}, localCol, remoteCol);
+    if(!_cache) _cache = {};
+    _cache[col] = merged;
+    lsSet(col, merged);
+    // Dispara callbacks registrados para esta coleção
+    (_callbacks[col]||[]).forEach(function(fn){ try{ fn(merged); }catch(e){} });
+  });
+}
+
+// ── Inicialização: carrega remoto, aplica, inicia poll ──────────────────────
+async function _dbInit(){
+  // 1. Carrega localStorage imediatamente (zero delay)
+  _cache = {};
+  COLS.forEach(function(col){ _cache[col] = lsGet(col)||{}; });
+
+  // Garante Fase de Grupos aberta por padrão se vazio
+  if(!_cache.faseConfig["Fase de Grupos"]){
+    _cache.faseConfig["Fase de Grupos"] = {aberta:true};
+    lsSet("faseConfig", _cache.faseConfig);
+  }
+
+  // 2. Dispara callbacks com dados locais (UI responde instantaneamente)
+  COLS.forEach(function(col){
+    (_callbacks[col]||[]).forEach(function(fn){ try{ fn(_cache[col]); }catch(e){} });
+  });
+
+  // 3. Busca remoto e aplica (atualiza se houver dados mais novos)
+  var remote = await _remoteLoad();
+  _applyRemote(remote);
+
+  // 4. Poll único a cada 12s para manter todos sincronizados
+  clearInterval(_pollTimer);
+  _pollTimer = setInterval(async function(){
+    var remote = await _remoteLoad();
+    _applyRemote(remote);
+  }, 12000);
+}
+
+// ── API pública ─────────────────────────────────────────────────────────────
 async function saveData(col, id, data){
-  // Sempre salva localmente primeiro (instantâneo)
-  const s = lsGet(col)||{}; s[id]=data; lsSet(col,s);
-  // Atualiza cache e agenda gravação remota
-  if(!_dbCache) await _dbLoad();
-  if(!_dbCache[col]) _dbCache[col]={};
-  _dbCache[col][id] = data;
+  // Atualiza localStorage imediatamente
+  var s = lsGet(col)||{}; s[id] = data; lsSet(col, s);
+  // Atualiza cache
+  if(!_cache){ _cache = {}; COLS.forEach(function(c2){ _cache[c2]=lsGet(c2)||{}; }); }
+  if(!_cache[col]) _cache[col] = {};
+  _cache[col][id] = data;
+  // Agenda gravação remota
   _scheduleSave();
 }
 
 function loadCollection(col){ return lsGet(col)||{}; }
 
-// Sincroniza dados do JSONBin para o localStorage e dispara callbacks
-async function _syncFromRemote(){
-  const db = await _dbLoad();
-  // Mescla remoto → localStorage (remoto tem precedência)
-  ["palpites","resultados","usuarios","faseConfig","jogosCustom"].forEach(col=>{
-    if(Object.keys(db[col]||{}).length > 0){
-      lsSet(col, db[col]);
-    }
-  });
-  return db;
-}
-
-// Substitui fbListen: faz poll a cada 15s para atualizar dados entre usuários
-var _pollTimers = {};
+// fbListen: registra callback — será chamado na inicialização e a cada poll
 function fbListen(col, cb){
-  // Dispara imediatamente com dados locais
-  const local = lsGet(col)||{};
-  if(Object.keys(local).length > 0) cb(local);
-  // Poll remoto
-  async function poll(){
-    try {
-      const db = await _syncFromRemote();
-      const data = db[col]||{};
-      lsSet(col, data);
-      cb(data);
-    } catch(e){ /* sem internet — usa local */ }
+  if(!_callbacks[col]) _callbacks[col] = [];
+  _callbacks[col].push(cb);
+  // Dispara imediatamente com dados locais se já tiver cache
+  if(_cache && _cache[col]){
+    try{ cb(_cache[col]); }catch(e){}
   }
-  poll(); // primeira chamada
-  _pollTimers[col] = setInterval(poll, 15000); // atualiza a cada 15s
 }
 
-// Compat — não usados mais mas chamados em alguns lugares
-async function fbSet(path,data){
-  const [col,id] = path.split("/");
-  await saveData(col,id,data);
+// Compat
+async function fbSet(path, data){
+  var parts = path.split("/"); await saveData(parts[0], parts[1], data);
 }
 async function fbGet(path){
-  const [col,id] = path.split("/");
-  const db = await _dbLoad();
-  return (db[col]||{})[id]||null;
+  var parts = path.split("/");
+  if(!_cache){ var r = await _remoteLoad(); _applyRemote(r); }
+  return (_cache[parts[0]]||{})[parts[1]] || null;
 }
 
 function aplicarJogosCustom(data){
-  jogosCustom={};
-  Object.entries(data||{}).forEach(([id,v])=>{jogosCustom[id]=v;});
+  jogosCustom = {};
+  Object.entries(data||{}).forEach(function(e){ jogosCustom[e[0]]=e[1]; });
 }
 
 // ─── PRAZO ─────────────────────────────────────────
@@ -662,27 +669,48 @@ function logoutUser(){
 
 // ─── INIT ───────────────────────────────────────────
 function initApp(){
-  document.getElementById("userNameDisplay").textContent=currentUser.nome;
-  document.getElementById("userIcon").textContent=isAdmin?"&#128081;":"&#128100;";
-  if(isAdmin)document.querySelector(".admin-tab").style.display="block";
+  document.getElementById("userNameDisplay").textContent = currentUser.nome;
+  document.getElementById("userIcon").textContent = isAdmin ? "&#128081;" : "&#128100;";
+  if(isAdmin) document.querySelector(".admin-tab").style.display = "block";
 
-  allPalpites=loadCollection("palpites");
-  resultados=loadCollection("resultados");
-  usuarios=loadCollection("usuarios");
-  faseConfig=loadCollection("faseConfig");
+  // Registra callbacks ANTES de _dbInit para receber dados assim que chegarem
+  fbListen("palpites", function(d){
+    allPalpites=d; renderJogos(); renderRanking(); updateStats();
+    if(isAdmin){ renderAdminJogos(); renderAdminUsers(); }
+  });
+  fbListen("resultados", function(d){
+    resultados=d; renderJogos(); renderRanking(); renderJogosView();
+    if(isAdmin) renderAdminJogos();
+  });
+  fbListen("usuarios", function(d){
+    usuarios=d; if(isAdmin){ renderAdminUsers(); renderAdminResetFase(); }
+  });
+  fbListen("faseConfig", function(d){
+    faseConfig=d; renderJogos(); renderJogosView();
+    if(isAdmin) renderAdminFaseControles();
+  });
+  fbListen("jogosCustom", function(d){
+    aplicarJogosCustom(d); renderJogos(); renderJogosView();
+    if(isAdmin){ renderAdminJogos(); renderAdminEditaTimes(); }
+  });
+
+  // Renderiza com localStorage (instantâneo)
+  allPalpites  = loadCollection("palpites");
+  resultados   = loadCollection("resultados");
+  usuarios     = loadCollection("usuarios");
+  faseConfig   = loadCollection("faseConfig");
   aplicarJogosCustom(loadCollection("jogosCustom"));
 
-  // Default: Fase de Grupos aberta
-  if(!faseConfig["Fase de Grupos"]){faseConfig["Fase de Grupos"]={aberta:true};lsSet("faseConfig",faseConfig);}
+  if(!faseConfig["Fase de Grupos"]){
+    faseConfig["Fase de Grupos"] = {aberta:true};
+    lsSet("faseConfig", faseConfig);
+  }
 
-  renderJogos();renderRanking();updateStats();renderJogosView();
-  if(isAdmin){renderAdminFaseControles();renderAdminEditaTimes();renderAdminResetFase();renderAdminJogos();renderAdminUsers();}
+  renderJogos(); renderRanking(); updateStats(); renderJogosView();
+  if(isAdmin){ renderAdminFaseControles(); renderAdminEditaTimes(); renderAdminResetFase(); renderAdminJogos(); renderAdminUsers(); }
 
-  fbListen("palpites",d=>{allPalpites=d;renderJogos();renderRanking();updateStats();if(isAdmin){renderAdminJogos();renderAdminUsers();}});
-  fbListen("resultados",d=>{resultados=d;renderJogos();renderRanking();renderJogosView();if(isAdmin)renderAdminJogos();});
-  fbListen("usuarios",d=>{usuarios=d;if(isAdmin){renderAdminUsers();renderAdminResetFase();}});
-  fbListen("faseConfig",d=>{faseConfig=d;renderJogos();renderJogosView();if(isAdmin)renderAdminFaseControles();});
-  fbListen("jogosCustom",d=>{aplicarJogosCustom(d);renderJogos();renderJogosView();if(isAdmin){renderAdminJogos();renderAdminEditaTimes();}});
+  // Inicia sincronização com JSONBin (carrega remoto + poll a cada 12s)
+  _dbInit();
 }
 
 // ─── RENDER PALPITES ───────────────────────────────
