@@ -376,8 +376,6 @@ let currentUser = null, isAdmin = false;
 let allPalpites = {}, resultados = {}, usuarios = {}, faseConfig = {};
 
 const FASES_ORDEM = ["Fase de Grupos","Oitavas de Final","Quartas de Final","Semifinais","Disputa 3\u00ba Lugar","Final"];
-// Credenciais de admin armazenadas como hash SHA-256 (a senha real nao aparece no codigo)
-const ADMIN_NOME       = "JP (Admin)";
 
 // ─── STORAGE ───────────────────────────────────────
 function lsGet(k){try{return JSON.parse(localStorage.getItem("bolao_"+k)||"null");}catch{return null;}}
@@ -860,23 +858,30 @@ function updateStats(){
 
 // ─── ADMIN: CONTROLE DE FASES ──────────────────────
 function renderAdminFaseControles(){
-  const container=document.getElementById("adminFaseControles");
-  let html="";
-  FASES_ORDEM.forEach(fase=>{
-    const cfg=faseConfig[fase]||{aberta:false};
-    const aberta=cfg.aberta;
-    const qtd=getAllJogos().filter(j=>j.f===fase).length;
+  var container=document.getElementById("adminFaseControles");
+  if(!container)return;
+  var html="";
+  FASES_ORDEM.forEach(function(fase,i){
+    var cfg=faseConfig[fase]||{aberta:false};
+    var aberta=cfg.aberta;
+    var qtd=getAllJogos().filter(function(j){return j.f===fase;}).length;
     html+='<div class="fase-ctrl'+(aberta?" aberta":"")+'">'+
       '<div><div class="fase-ctrl-nome">'+fase+'</div>'+
-      '<div class="fase-ctrl-sub">'+qtd+' jogo'+(qtd!==1?'s':'')+(aberta?' &middot; <strong style="color:var(--verde2)">ABERTA para palpites</strong>':' &middot; <span style="color:var(--cinza3)">Fechada</span>')+'</div></div>'+
-      '<button class="btn btn-sm '+(aberta?"btn-red":"btn-green")+'" onclick="toggleFase(\''+fase+'\','+aberta+')">'+
-        (aberta?'\uD83D\uDD12 Fechar Fase':'\uD83D\uDD13 Abrir Fase')+
+      '<div class="fase-ctrl-sub">'+qtd+' jogo'+(qtd!==1?'s':'')+(aberta?' &middot; <strong style="color:var(--verde2)">ABERTA</strong>':' &middot; <span style="color:var(--cinza3)">Fechada</span>')+'</div></div>'+
+      '<button class="btn btn-sm '+(aberta?"btn-red":"btn-green")+'" data-fase="'+i+'" data-aberta="'+(aberta?1:0)+'" onclick="handleToggleFase(this)">'+
+        (aberta?"&#128274; Fechar":"&#128275; Abrir")+
       '</button>'+
     '</div>';
   });
   container.innerHTML=html;
 }
 
+function handleToggleFase(el){
+  var i=parseInt(el.getAttribute("data-fase"));
+  var aberta=el.getAttribute("data-aberta")==="1";
+  var fase=FASES_ORDEM[i];
+  toggleFase(fase,aberta);
+}
 async function toggleFase(fase,ehAberta){
   const acao=ehAberta?"fechar":"abrir";
   if(!confirm("Deseja "+acao+" a fase \""+fase+"\" para palpites?"))return;
@@ -977,53 +982,67 @@ async function salvarResultado(jogoId){
 }
 
 // ─── ADMIN: USUÁRIOS ───────────────────────────────
+// Admin users table — usa data-attributes, zero problemas de aspas
 function renderAdminUsers(){
-  const container=document.getElementById("adminUsersList");
-  const map={};
-  Object.entries(usuarios).forEach(([uid,u])=>{map[uid]={...u,_pal:0};});
-  Object.entries(allPalpites).forEach(([uid,p])=>{
+  var container=document.getElementById("adminUsersList");
+  var map={};
+  Object.entries(usuarios).forEach(function(e){var uid=e[0],u=e[1];map[uid]=Object.assign({},u,{_pal:0});});
+  Object.entries(allPalpites).forEach(function(e){
+    var uid=e[0],p=e[1];
     if(p._removido)return;
     if(!map[uid])map[uid]={nomeCompleto:p._nome||uid,isAdmin:false,_pal:0};
-    map[uid]._pal=Object.keys(p).filter(k=>!k.startsWith("_")).length;
+    map[uid]._pal=Object.keys(p).filter(function(k){return k[0]!=='_';}).length;
     if(!map[uid].nomeCompleto)map[uid].nomeCompleto=p._nome||uid;
   });
-  const entries=Object.entries(map).filter(([uid])=>uid!==currentUser.id||!isAdmin);
-  if(!entries.length){container.innerHTML='<div class="empty-state"><div class="icon">&#128101;</div><p>Nenhum participante ainda.</p></div>';return;}
-  const fmtFone=f=>(f||"").replace(/(\d{2})(\d{4,5})(\d{4})/,"($1) $2-$3")||"-";
-  let html='<div style="overflow-x:auto"><table class="ranking-table"><thead><tr>'
-    +'<th>Usu\u00e1rio</th><th>Nome Completo</th><th>Telefone</th>'
-    +'<th>PIX</th><th>Status</th><th>Palpites</th><th>A\u00e7\u00f5es</th>'
-    +'</tr></thead><tbody>';
-  entries.forEach(([uid,u])=>{
-    const pix=u.confirmadoPix
-      ?'<span class="user-status-pago">&#10003; Confirmado</span>'
-      :'<span class="user-status-pendente">&#9679; Pendente</span>';
-    const statusLabel=u.desabilitado
-      ?'<span class="user-status-desabilitado">Desabilitado</span>'
-      :u.isAdmin?'<span class="admin-badge">ADMIN</span>'
-      :'<span class="user-status-pago" style="background:#e3f2fd;color:#1565c0">Ativo</span>';
-    const btnPix=u.confirmadoPix
-      ?'<button class="btn btn-gray btn-sm" onclick="confirmarPix(''+uid+'',true)">&#10003; PIX OK</button>'
-      :'<button class="btn btn-green btn-sm" onclick="confirmarPix(''+uid+'',false)">&#128176; Conf. PIX</button>';
-    const btnDesat=u.desabilitado
-      ?'<button class="btn btn-green btn-sm" onclick="toggleDesabilitar(''+uid+'',true)">&#9989; Habilitar</button>'
-      :'<button class="btn btn-danger btn-sm" onclick="toggleDesabilitar(''+uid+'',false)">&#128683; Desabilitar</button>';
-    html+='<tr class="'+(u.desabilitado?"user-disabled-overlay":"")+'">'
-      +'<td style="font-family:monospace;font-size:11px;color:var(--cinza3)">'+uid+'</td>'
-      +'<td><strong>'+(u.nomeCompleto||u.nome||uid)+'</strong></td>'
-      +'<td style="font-size:12px">'+fmtFone(u.telefone)+'</td>'
-      +'<td>'+pix+'</td>'
-      +'<td>'+statusLabel+'</td>'
-      +'<td>'+(u._pal||0)+' / '+JOGOS_BASE.length+'</td>'
-      +'<td><div style="display:flex;gap:4px;flex-wrap:wrap">'
-        +btnPix
-        +btnDesat
-        +'<button class="btn btn-yellow btn-sm" onclick="toggleAdmin(''+uid+'','+(u.isAdmin||false)+')">'+(u.isAdmin?'Revogar ADM':'Tornar ADM')+'</button>'
-        +'<button class="btn btn-gray btn-sm" onclick="resetarSenha(''+uid+'')">Senha</button>'
-        +'<button class="btn btn-danger btn-sm" onclick="removerUsuario(''+uid+'')">&#128465;</button>'
-      +'</div></td></tr>';
+  var entries=Object.entries(map).filter(function(e){return e[0]!==currentUser.id||!isAdmin;});
+  if(!entries.length){
+    container.innerHTML='<div class="empty-state"><div class="icon">&#128101;</div><p>Nenhum participante ainda.</p></div>';
+    return;
+  }
+  function fmtFone(f){return (f||"").replace(/(\d{2})(\d{4,5})(\d{4})/,"($1) $2-$3")||"-";}
+  var rows="";
+  entries.forEach(function(e){
+    var uid=e[0],u=e[1];
+    var pix=u.confirmadoPix
+      ? '<span class="user-status-pago">&#10003; Confirmado</span>'
+      : '<span class="user-status-pendente">&#9679; Pendente</span>';
+    var stat=u.desabilitado
+      ? '<span class="user-status-desabilitado">Desabilitado</span>'
+      : u.isAdmin ? '<span class="admin-badge">ADMIN</span>'
+      : '<span style="background:#e3f2fd;color:#1565c0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px">Ativo</span>';
+    // Usa data-uid para evitar qualquer problema de aspas no onclick
+    function btn(cls,acao,val,label){
+      return '<button class="btn '+cls+' btn-sm" data-uid="'+uid+'" data-acao="'+acao+'" data-val="'+val+'" onclick="handleAdminBtn(this)">'+label+'</button>';
+    }
+    rows+='<tr class="'+(u.desabilitado?"user-disabled-overlay":"")+'">'+
+      '<td style="font-family:monospace;font-size:11px;color:var(--cinza3)">'+uid+'</td>'+
+      '<td><strong>'+(u.nomeCompleto||u.nome||uid)+'</strong></td>'+
+      '<td style="font-size:12px">'+fmtFone(u.telefone)+'</td>'+
+      '<td>'+pix+'</td><td>'+stat+'</td>'+
+      '<td>'+(u._pal||0)+' / '+JOGOS_BASE.length+'</td>'+
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap">'+
+        btn(u.confirmadoPix?"btn-gray":"btn-green","pix",u.confirmadoPix?"true":"false",u.confirmadoPix?"&#10003; PIX OK":"&#128176; Conf. PIX")+
+        btn(u.desabilitado?"btn-green":"btn-danger","desat",u.desabilitado?"true":"false",u.desabilitado?"&#9989; Habilitar":"&#128683; Desabilitar")+
+        btn("btn-yellow","adm",u.isAdmin?"true":"false",u.isAdmin?"Revogar ADM":"Tornar ADM")+
+        btn("btn-gray","senha","","Senha")+
+        btn("btn-danger","del","","&#128465;")+
+      '</div></td></tr>';
   });
-  container.innerHTML=html+'</tbody></table></div>';
+  container.innerHTML='<div style="overflow-x:auto"><table class="ranking-table"><thead><tr>'+
+    '<th>Usu\u00e1rio</th><th>Nome Completo</th><th>Telefone</th>'+
+    '<th>PIX</th><th>Status</th><th>Palpites</th><th>A\u00e7\u00f5es</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+function handleAdminBtn(el){
+  var uid=el.getAttribute("data-uid");
+  var acao=el.getAttribute("data-acao");
+  var val=el.getAttribute("data-val")==="true";
+  if(acao==="pix")   confirmarPix(uid,val);
+  if(acao==="desat") toggleDesabilitar(uid,val);
+  if(acao==="adm")   toggleAdmin(uid,val);
+  if(acao==="senha") resetarSenha(uid);
+  if(acao==="del")   removerUsuario(uid);
 }
 async function toggleAdmin(uid,eh){
   if(!confirm((eh?"Revogar admin de ":"Tornar admin: ")+uid+"?"))return;
@@ -1078,23 +1097,28 @@ async function toggleDesabilitar(uid, estaDesabilitado){
 
 // ─── RESET DE RESULTADOS POR FASE ────────────────────────
 function renderAdminResetFase(){
-  const container=document.getElementById("adminResetFase");
+  var container=document.getElementById("adminResetFase");
   if(!container)return;
-  let html='';
-  FASES_ORDEM.forEach(fase=>{
-    const jogosF=JOGOS_BASE.filter(j=>j.f===fase);
-    const comRes=jogosF.filter(j=>resultados[j.id]&&resultados[j.id].gA!==undefined).length;
-    html+='<div class="fase-ctrl" style="margin-bottom:8px">'
-      +'<div><div class="fase-ctrl-nome">'+fase+'</div>'
-      +'<div class="fase-ctrl-sub">'+comRes+' resultado'+(comRes!==1?'s':'')+' inserido'+(comRes!==1?'s':'')+'</div></div>'
-      +(comRes>0
-        ?'<button class="btn btn-danger btn-sm" onclick="resetarFase(''+fase+'')">&#128465; Resetar '+fase+'</button>'
-        :'<span style="font-size:11px;color:var(--cinza3)">Sem resultados</span>')
-      +'</div>';
+  var html="";
+  FASES_ORDEM.forEach(function(fase,i){
+    var jogosF=JOGOS_BASE.filter(function(j){return j.f===fase;});
+    var comRes=jogosF.filter(function(j){return resultados[j.id]&&resultados[j.id].gA!==undefined;}).length;
+    html+='<div class="fase-ctrl" style="margin-bottom:8px">'+
+      '<div><div class="fase-ctrl-nome">'+fase+'</div>'+
+      '<div class="fase-ctrl-sub">'+comRes+' resultado'+(comRes!==1?'s':'')+' inserido'+(comRes!==1?'s':'')+'</div></div>'+
+      (comRes>0
+        ? '<button class="btn btn-danger btn-sm" data-fase="'+i+'" onclick="handleResetFase(this)">&#128465; Resetar</button>'
+        : '<span style="font-size:11px;color:var(--cinza3)">Sem resultados</span>')+
+      '</div>';
   });
   container.innerHTML=html;
 }
 
+function handleResetFase(el){
+  var i=parseInt(el.getAttribute("data-fase"));
+  var fase=FASES_ORDEM[i];
+  resetarFase(fase);
+}
 async function resetarFase(fase){
   const jogosF=JOGOS_BASE.filter(j=>j.f===fase);
   const comRes=jogosF.filter(j=>resultados[j.id]&&resultados[j.id].gA!==undefined).length;
@@ -1158,8 +1182,7 @@ async function restaurarBackup(evt){
     allPalpites=dados.palpites;resultados=dados.resultados||{};usuarios=dados.usuarios||{};faseConfig=dados.faseConfig||{};aplicarJogosCustom(dados.jogosCustom||{});
     renderJogos();renderRanking();updateStats();renderJogosView();renderAdminFaseControles();renderAdminResetFase();renderAdminUsers();renderAdminJogos();
     hideSaving("✓ Backup restaurado!");
-    alert("Backup restaurado com sucesso!
-Gerado em: "+(dados.geradoEm||"desconhecido"));
+    alert("Backup restaurado com sucesso! Gerado em: "+(dados.geradoEm||"desconhecido"));
   }catch(e){alert("Erro ao ler backup: "+e.message);}
 }
 
