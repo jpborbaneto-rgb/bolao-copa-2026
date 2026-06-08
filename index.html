@@ -118,6 +118,14 @@ main{max-width:1100px;margin:0 auto;padding:24px}
 .fbv{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
 .fba{background:#e8f5e9;color:#2e7d32}
 .fbf{background:var(--cinza2);color:var(--cinza3)}
+.pix-aviso{background:linear-gradient(135deg,#E65100,#F9A825);border-radius:12px;padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 16px rgba(230,81,0,.25);animation:pixPulse 2.5s ease-in-out infinite}
+@keyframes pixPulse{0%,100%{box-shadow:0 4px 16px rgba(230,81,0,.25)}50%{box-shadow:0 4px 28px rgba(230,81,0,.55)}}
+.pix-aviso-icon{font-size:32px;flex-shrink:0}
+.pix-aviso-texto{flex:1}
+.pix-aviso-titulo{font-weight:700;font-size:15px;color:#fff;margin-bottom:3px}
+.pix-aviso-sub{font-size:12px;color:rgba(255,255,255,.9)}
+.pix-aviso-chave{font-weight:700;font-size:14px;color:#fff;background:rgba(0,0,0,.2);padding:4px 10px;border-radius:6px;margin-top:6px;display:inline-block}
+.pix-fechar{background:rgba(255,255,255,.2);border:none;color:#fff;font-size:20px;cursor:pointer;width:30px;height:30px;border-radius:50%;flex-shrink:0}
 @media(max-width:600px){.jc{grid-template-columns:1fr;gap:8px}.tl.d{flex-direction:row}main{padding:12px}.ter{grid-template-columns:1fr}}
 </style>
 </head>
@@ -157,7 +165,8 @@ main{max-width:1100px;margin:0 auto;padding:24px}
       </div>
       <div class="pc" id="pcnt">0 / 0 palpites feitos</div>
     </div>
-    <div id="jlp"></div>
+    <div id="pix-aviso-container"></div>
+	<div id="jlp"></div>
   </div>
   <div class="tc" id="tc-ranking">
     <div class="card">
@@ -416,7 +425,7 @@ var curUser=null, isAdmin=false;
 var usuarios={}, palpites={}, resultados={}, faseConfig={}, jogosCustom={};
 var _A="jp.adm.copa", _S="Klabin@Copa2026";
 var ADMIN_NOME="JP (Admin)";
-var FASES=["Fase de Grupos","Oitavas de Final","Quartas de Final","Semifinais","Disputa 3\u00ba Lugar","Final"];
+var FASES=["Fase de Grupos","32avos de Final","Oitavas de Final","Quartas de Final","Semifinais","Disputa 3º Lugar","Final"];
 
 // ═══════════════════════════════════════════════════════════════
 // JOGOS
@@ -494,6 +503,22 @@ var JOGOS = [
   {id:"L4",g:"L",f:"Fase de Grupos",dt:"23/06/2026",hr:"20:00",an:"Panamá",af:"🇵🇦",bn:"Croácia",bf:"🇭🇷",loc:"BMO Field, Toronto"},
   {id:"L5",g:"L",f:"Fase de Grupos",dt:"27/06/2026",hr:"18:00",an:"Panamá",af:"🇵🇦",bn:"Inglaterra",bf:"🏴󠁧󠁢󠁥󠁮󠁧󠁿",loc:"MetLife, East Rutherford"},
   {id:"L6",g:"L",f:"Fase de Grupos",dt:"27/06/2026",hr:"18:00",an:"Croácia",af:"🇭🇷",bn:"Gana",bf:"🇬🇭",loc:"Lincoln Financial, Filadélfia"},
+  {id:"R1",g:null,f:"32avos de Final",dt:"28/06/2026",hr:"16:00",an:"1º Grupo A",af:"🏳️",bn:"2º Grupo B",bf:"🏳️",loc:"MetLife, East Rutherford"},
+  {id:"R2",g:null,f:"32avos de Final",dt:"28/06/2026",hr:"20:00",an:"1º Grupo C",af:"🏳️",bn:"2º Grupo D",bf:"🏳️",loc:"Mercedes-Benz, Atlanta"},
+  {id:"R3",g:null,f:"32avos de Final",dt:"29/06/2026",hr:"16:00",an:"1º Grupo E",af:"🏳️",bn:"2º Grupo F",bf:"🏳️",loc:"AT&T, Arlington"},
+  {id:"R4",g:null,f:"32avos de Final",dt:"29/06/2026",hr:"20:00",an:"1º Grupo G",af:"🏳️",bn:"2º Grupo H",bf:"🏳️",loc:"Hard Rock, Miami"},
+  {id:"R5",g:null,f:"32avos de Final",dt:"30/06/2026",hr:"16:00",an:"1º Grupo I",af:"🏳️",bn:"2º Grupo J",bf:"🏳️",loc:"Lumen Field, Seattle"},
+  {id:"R6",g:null,f:"32avos de Final",dt:"30/06/2026",hr:"20:00",an:"1º Grupo K",af:"🏳️",bn:"2º Grupo L",bf:"🏳️",loc:"NRG, Houston"},
+  {id:"R7",g:null,f:"32avos de Final",dt:"01/07/2026",hr:"16:00",an:"1º Grupo B",af:"🏳️",bn:"2º Grupo A",bf:"🏳️",loc:"SoFi, Inglewood"},
+  {id:"R8",g:null,f:"32avos de Final",dt:"01/07/2026",hr:"20:00",an:"1º Grupo D",af:"🏳️",bn:"2º Grupo C",bf:"🏳️",loc:"Levi's, Santa Clara"},
+  {id:"R9",g:null,f:"32avos de Final",dt:"02/07/2026",hr:"16:00",an:"1º Grupo F",af:"🏳️",bn:"2º Grupo E",bf:"🏳️",loc:"BC Place, Vancouver"},
+  {id:"R10",g:null,f:"32avos de Final",dt:"02/07/2026",hr:"20:00",an:"1º Grupo H",af:"🏳️",bn:"2º Grupo G",bf:"🏳️",loc:"Arrowhead, Kansas City"},
+  {id:"R11",g:null,f:"32avos de Final",dt:"03/07/2026",hr:"16:00",an:"1º Grupo J",af:"🏳️",bn:"2º Grupo I",bf:"🏳️",loc:"AT&T, Arlington"},
+  {id:"R12",g:null,f:"32avos de Final",dt:"03/07/2026",hr:"20:00",an:"1º Grupo L",af:"🏳️",bn:"2º Grupo K",bf:"🏳️",loc:"MetLife, East Rutherford"},
+  {id:"R13",g:null,f:"32avos de Final",dt:"04/07/2026",hr:"16:00",an:"3º Melhor 1",af:"🏳️",bn:"3º Melhor 2",bf:"🏳️",loc:"NRG, Houston"},
+  {id:"R14",g:null,f:"32avos de Final",dt:"04/07/2026",hr:"20:00",an:"3º Melhor 3",af:"🏳️",bn:"3º Melhor 4",bf:"🏳️",loc:"SoFi, Inglewood"},
+  {id:"R15",g:null,f:"32avos de Final",dt:"05/07/2026",hr:"16:00",an:"3º Melhor 5",af:"🏳️",bn:"3º Melhor 6",bf:"🏳️",loc:"Lumen Field, Seattle"},
+  {id:"R16",g:null,f:"32avos de Final",dt:"07/07/2026",hr:"20:00",an:"3º Melhor 7",af:"🏳️",bn:"3º Melhor 8",bf:"🏳️",loc:"Hard Rock, Miami"},
   {id:"O1",g:null,f:"Oitavas de Final",dt:"29/06/2026",hr:"16:00",an:"1º Grupo A",af:"🏳️",bn:"2º Grupo B",bf:"🏳️",loc:"MetLife, East Rutherford"},
   {id:"O2",g:null,f:"Oitavas de Final",dt:"29/06/2026",hr:"20:00",an:"1º Grupo C",af:"🏳️",bn:"2º Grupo D",bf:"🏳️",loc:"Mercedes-Benz, Atlanta"},
   {id:"O3",g:null,f:"Oitavas de Final",dt:"30/06/2026",hr:"16:00",an:"1º Grupo E",af:"🏳️",bn:"2º Grupo F",bf:"🏳️",loc:"AT&T, Arlington"},
@@ -637,7 +662,7 @@ function initApp(){
   renderAll();
 
   // Registra listeners para sincronização em tempo real
-  dbListen("usuarios",   function(d){ usuarios=d;   if(isAdmin)renderUsers(); renderPremiacao(); });
+  dbListen("usuarios", function(d){ usuarios=d; if(isAdmin)renderUsers(); renderPremiacao(); renderAvisoPix(); });
   dbListen("palpites",   function(d){
     palpites=d;
     // Garante que resultados tbm está atualizado antes de renderizar o ranking
@@ -659,7 +684,7 @@ function initApp(){
 }
 
 function renderAll(){
-  renderPalpites(); renderRanking(); updateStats(); renderJogosView(); renderPremiacao();
+  renderAvisoPix(); renderPalpites(); renderRanking(); updateStats(); renderJogosView(); renderPremiacao();
   if (isAdmin){ renderFaseControle(); renderEditaTimes(); renderResultados(); renderResetFase(); renderUsers(); }
 }
 
@@ -1144,6 +1169,21 @@ function renderPremiacao(){
 // ═══════════════════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════════════════
+function renderAvisoPix(){
+  var el=document.getElementById("pix-aviso-container");if(!el)return;
+  if(isAdmin){el.innerHTML="";return;}
+  var u=usuarios[curUser?curUser.id:""];
+  if(u&&u.confirmadoPix){el.innerHTML="";return;}
+  el.innerHTML='<div class="pix-aviso">'+
+    '<div class="pix-aviso-icon">💰</div>'+
+    '<div class="pix-aviso-texto">'+
+      '<div class="pix-aviso-titulo">⚠️ Seu PIX ainda não foi confirmado!</div>'+
+      '<div class="pix-aviso-sub">Envie R$ 10,00 para participar. Coloque seu usuário na descrição.</div>'+
+      '<div class="pix-aviso-chave">PIX: jpborbaneto@outlook.com</div>'+
+    '</div>'+
+    '<button class="pix-fechar" onclick="this.parentNode.parentNode.style.display=\'none\'">×</button>'+
+  '</div>';
+}
 function start(){
   var s=localStorage.getItem("b26_session");
   if(s){
