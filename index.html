@@ -12,6 +12,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
 <title>Bolão Copa do Mundo 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -185,6 +186,10 @@ main{max-width:1100px;margin:0 auto;padding:24px}
   <div class="tc" id="tc-admin">
     <div class="card">
       <div class="ct">⚙️ Painel Admin <span class="ab">ADMIN</span></div>
+      <div style="margin-bottom:22px">
+        <div style="font-size:14px;font-weight:700;color:var(--verde);margin-bottom:8px">🔐 Cadastro de Novos Usuários</div>
+        <div id="adcc"></div>
+      </div>
       <div style="margin-bottom:22px">
         <div style="font-size:14px;font-weight:700;color:var(--verde);margin-bottom:8px">🔓 Controle de Fases</div>
         <div id="adf"></div>
@@ -607,6 +612,11 @@ async function fazerLogin(){
       if (ex.desabilitado)    { alert("Conta desabilitada. Fale com o administrador."); return; }
       curUser = {id:uid, nome:ex.nomeCompleto||uid}; isAdmin = ex.isAdmin||false;
     } else {
+      // Verifica se cadastro está aberto
+      if (faseConfig._cadastroAberto === false) {
+        alert("🔒 Cadastro de novos usuários está fechado no momento.\nFale com o administrador do bolão.");
+        return;
+      }
       // Novo usuário
       var nc  = document.getElementById("lnnc");
       var tel = document.getElementById("lntel");
@@ -677,7 +687,7 @@ function initApp(){
     renderPalpites(); renderRanking(); renderJogosView();
     if(isAdmin)renderResultados();
   });
-  dbListen("faseConfig", function(d){ faseConfig=d; renderPalpites(); renderJogosView(); if(isAdmin)renderFaseControle(); });
+  dbListen("faseConfig", function(d){ faseConfig=d; renderPalpites(); renderJogosView(); if(isAdmin){renderFaseControle(); renderCadastroCtrl();} });
   dbListen("jogosCustom",function(d){ jogosCustom=d; jCustom=d; renderPalpites(); renderJogosView(); if(isAdmin){renderResultados();renderEditaTimes();} });
 
   startPolling();
@@ -685,7 +695,7 @@ function initApp(){
 
 function renderAll(){
   renderAvisoPix(); renderPalpites(); renderRanking(); updateStats(); renderJogosView(); renderPremiacao();
-  if (isAdmin){ renderFaseControle(); renderEditaTimes(); renderResultados(); renderResetFase(); renderUsers(); }
+  if (isAdmin){ renderCadastroCtrl(); renderFaseControle(); renderEditaTimes(); renderResultados(); renderResetFase(); renderUsers(); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -713,6 +723,13 @@ function hideSv(m){
 // ═══════════════════════════════════════════════════════════════
 // RENDER PALPITES
 // ═══════════════════════════════════════════════════════════════
+function dtMsP(j){var p=j.dt.split("/");return new Date(p[2],p[1]-1,p[0],...j.hr.split(":").map(Number)).getTime();}
+function fmtDataP(dt){
+  var p=dt.split("/"), d=new Date(p[2],p[1]-1,p[0]);
+  var nms=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  var ds=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  return ds[d.getDay()]+", "+p[0]+" "+nms[parseInt(p[1])-1];
+}
 function renderPalpites(){
   if(!curUser)return;
   var meus = palpites[curUser.id]||{};
@@ -720,12 +737,12 @@ function renderPalpites(){
   FASES.forEach(function(fase){
     var jf = allJogos().filter(function(j){return j.f===fase;});
     if(!jf.length)return;
+    jf.sort(function(a,b){return dtMsP(a)-dtMsP(b);});
     var aberta = faseOk(fase);
     var fbadge = aberta
       ? '<span class="fbv fba">✅ Aberta</span>'
       : '<span class="fbv fbf">🔒 Fechada</span>';
     html += '<div class="ft">'+fase+fbadge+'</div>';
-    var grupos = [...new Set(jf.map(function(j){return j.g;}).filter(Boolean))];
     function renderJogo(j){
       tot++;
       var p=meus[j.id], r=resultados[j.id];
@@ -755,18 +772,24 @@ function renderPalpites(){
                '<span class="ps sbl">'+(aberta?'🔒 Prazo enc.':'🔒 Fase fechada')+'</span>')+
           '</div>';
       }
-      html+='<div class="'+cls+'">'+
-        '<div class="tl"><span class="bf">'+j.af+'</span><div><div class="tn">'+j.an+'</div><div class="tm">'+j.dt+' '+j.hr+'</div></div></div>'+
+      var grupoTag = j.g ? ' <span style="font-size:10px;color:var(--azul);background:#f0f4ff;padding:1px 6px;border-radius:6px;margin-left:6px">Grupo '+j.g+'</span>' : '';
+      return '<div class="'+cls+'">'+
+        '<div class="tl"><span class="bf">'+j.af+'</span><div><div class="tn">'+j.an+grupoTag+'</div><div class="tm">'+j.hr+'h · '+(j.loc||'')+'</div></div></div>'+
         mid+
-        '<div class="tl d"><span class="bf">'+j.bf+'</span><div><div class="tn">'+j.bn+'</div><div class="tm">'+(j.loc||'')+'</div></div></div>'+
+        '<div class="tl d"><span class="bf">'+j.bf+'</span><div><div class="tn">'+j.bn+'</div></div></div>'+
         '</div>';
     }
-    if(grupos.length){
-      grupos.forEach(function(g){
-        html+='<div class="gt">Grupo '+g+'</div>';
-        jf.filter(function(j){return j.g===g;}).forEach(renderJogo);
-      });
-    } else { jf.forEach(renderJogo); }
+    // Agrupa por data dentro da fase
+    var datas = [...new Set(jf.map(function(j){return j.dt;}))];
+    datas.sort(function(a,b){
+      var pa=a.split("/"), pb=b.split("/");
+      return new Date(pa[2],pa[1]-1,pa[0]) - new Date(pb[2],pb[1]-1,pb[0]);
+    });
+    datas.forEach(function(dt){
+      html += '<div style="margin:14px 0 6px;padding:7px 12px;background:var(--cinza);border-radius:8px;border-left:3px solid var(--azul)">'+
+              '<span style="font-weight:700;font-size:12px;color:var(--azul)">'+fmtDataP(dt)+'</span></div>';
+      jf.filter(function(j){return j.dt===dt;}).forEach(function(j){html+=renderJogo(j);});
+    });
   });
   document.getElementById("jlp").innerHTML=html;
   document.getElementById("pcnt").textContent=feitos+" / "+tot+" palpites feitos";
@@ -878,6 +901,24 @@ function updateStats(){
 // ═══════════════════════════════════════════════════════════════
 // ADMIN — CONTROLE DE FASES
 // ═══════════════════════════════════════════════════════════════
+function renderCadastroCtrl(){
+  var el=document.getElementById("adcc"); if(!el)return;
+  var aberto = (faseConfig._cadastroAberto!==false);
+  el.innerHTML = '<div class="fc'+(aberto?" ab2":"")+'">'+
+    '<div><div class="fbn">'+(aberto?"🟢 Cadastro Aberto":"🔴 Cadastro Fechado")+'</div>'+
+    '<div class="fbs">'+(aberto?"Novos usuários podem se cadastrar pelo link":"Somente o admin pode cadastrar novos usuários")+'</div></div>'+
+    '<button class="btn bs '+(aberto?"bd":"bv")+'" onclick="toggleCadastro()">'+
+      (aberto?"🔒 Fechar Cadastro":"🔓 Abrir Cadastro")+'</button></div>';
+}
+async function toggleCadastro(){
+  var aberto = (faseConfig._cadastroAberto!==false);
+  if(!confirm((aberto?"Fechar":"Abrir")+" cadastro de novos usuários?"))return;
+  showSv("Atualizando...");
+  faseConfig._cadastroAberto = !aberto;
+  await dbSet("faseConfig", faseConfig);
+  renderCadastroCtrl();
+  hideSv("✓ Cadastro "+(aberto?"fechado":"aberto")+"!");
+}
 function renderFaseControle(){
   var html="";
   FASES.forEach(function(fase,i){
@@ -1148,7 +1189,7 @@ function showTab(t,el){
   }
   if(t==="jogos")renderJogosView();
   if(t==="premiacao")renderPremiacao();
-  if(t==="admin"&&isAdmin){renderFaseControle();renderEditaTimes();renderResultados();renderResetFase();renderUsers();}
+  if(t==="admin"&&isAdmin){renderCadastroCtrl();renderFaseControle();renderEditaTimes();renderResultados();renderResetFase();renderUsers();}
 }
 
 
