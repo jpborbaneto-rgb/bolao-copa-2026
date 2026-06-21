@@ -201,7 +201,7 @@ main{max-width:1100px;margin:0 auto;padding:24px}
       <div style="margin-bottom:22px">
         <div style="font-size:14px;font-weight:700;color:var(--verde);margin-bottom:8px">🎮 Inserir Resultados</div>
         <button id="btnBuscarResultados" class="btn bv" style="width:100%;padding:12px;margin-bottom:12px" onclick="buscarResultadosAPI()">🔄 Atualizar Resultados (API)</button>
-        <div style="font-size:11px;color:var(--cinza3);margin-bottom:12px;text-align:center">Busca jogos finalizados automaticamente via API-Football. Você ainda pode editar manualmente abaixo.</div>
+        <div style="font-size:11px;color:var(--cinza3);margin-bottom:12px;text-align:center">Busca jogos finalizados automaticamente (football-data.org). Você ainda pode editar manualmente abaixo.</div>
         <div id="adr"></div>
       </div>
       <div style="margin-bottom:22px">
@@ -1486,9 +1486,9 @@ function renderClassificacaoView(){
 // ═══════════════════════════════════════════════════════════════
 // BUSCA AUTOMÁTICA DE RESULTADOS — API-Football
 // ═══════════════════════════════════════════════════════════════
-var API_FOOTBALL_KEY = "1defc3bf77de30fadb8c528610d6369f";
-var API_FOOTBALL_URL = "https://v3.football.api-sports.io";
-var TRADUCAO_TIMES = {"Germany": "Alemanha", "Argentina": "Argentina", "Algeria": "Argélia", "Saudi Arabia": "Arábia Saudita", "Australia": "Austrália", "Brazil": "Brasil", "Belgium": "Bélgica", "Bosnia and Herzegovina": "Bósnia", "Cape Verde": "Cabo Verde", "Canada": "Canadá", "Qatar": "Catar", "Colombia": "Colômbia", "South Korea": "Coreia do Sul", "Korea Republic": "Coreia do Sul", "Ivory Coast": "Costa do Marfim", "Côte d'Ivoire": "Costa do Marfim", "Croatia": "Croácia", "Curacao": "Curaçao", "Curaçao": "Curaçao", "USA": "EUA", "United States": "EUA", "Egypt": "Egito", "Ecuador": "Equador", "Scotland": "Escócia", "Spain": "Espanha", "France": "França", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda", "England": "Inglaterra", "Iraq": "Iraque", "Iran": "Irã", "IR Iran": "Irã", "Japan": "Japão", "Jordan": "Jordânia", "Morocco": "Marrocos", "Mexico": "México", "Norway": "Noruega", "New Zealand": "Nova Zelândia", "Panama": "Panamá", "Paraguay": "Paraguai", "Portugal": "Portugal", "DR Congo": "RD Congo", "Congo DR": "RD Congo", "Czech Republic": "Rep. Tcheca", "Czechia": "Rep. Tcheca", "Senegal": "Senegal", "Sweden": "Suécia", "Switzerland": "Suíça", "Tunisia": "Tunísia", "Turkey": "Turquia", "Türkiye": "Turquia", "Uruguay": "Uruguai", "Uzbekistan": "Uzbequistão", "South Africa": "África do Sul", "Austria": "Áustria"};
+var API_FOOTBALL_KEY = "8a88fd0fd0064b80b9d0d8958ac45452";
+var API_FOOTBALL_URL = "https://api.football-data.org/v4";
+var TRADUCAO_TIMES = {"Germany": "Alemanha", "Argentina": "Argentina", "Algeria": "Argélia", "Saudi Arabia": "Arábia Saudita", "Australia": "Austrália", "Brazil": "Brasil", "Belgium": "Bélgica", "Bosnia and Herzegovina": "Bósnia", "Bosnia-Herzegovina": "Bósnia", "Cape Verde": "Cabo Verde", "Cape Verde Islands": "Cabo Verde", "Canada": "Canadá", "Qatar": "Catar", "Colombia": "Colômbia", "South Korea": "Coreia do Sul", "Korea Republic": "Coreia do Sul", "Korea, South": "Coreia do Sul", "Republic of Korea": "Coreia do Sul", "Ivory Coast": "Costa do Marfim", "Côte d'Ivoire": "Costa do Marfim", "Cote d'Ivoire": "Costa do Marfim", "Croatia": "Croácia", "Curacao": "Curaçao", "Curaçao": "Curaçao", "USA": "EUA", "United States": "EUA", "United States of America": "EUA", "Egypt": "Egito", "Ecuador": "Equador", "Scotland": "Escócia", "Spain": "Espanha", "France": "França", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda", "Holland": "Holanda", "England": "Inglaterra", "Iraq": "Iraque", "Iran": "Irã", "IR Iran": "Irã", "Islamic Republic of Iran": "Irã", "Japan": "Japão", "Jordan": "Jordânia", "Morocco": "Marrocos", "Mexico": "México", "Norway": "Noruega", "New Zealand": "Nova Zelândia", "Panama": "Panamá", "Paraguay": "Paraguai", "Portugal": "Portugal", "DR Congo": "RD Congo", "Congo DR": "RD Congo", "DRCongo": "RD Congo", "Democratic Republic of the Congo": "RD Congo", "Congo (Democratic Republic)": "RD Congo", "Czech Republic": "Rep. Tcheca", "Czechia": "Rep. Tcheca", "Senegal": "Senegal", "Sweden": "Suécia", "Switzerland": "Suíça", "Tunisia": "Tunísia", "Turkey": "Turquia", "Türkiye": "Turquia", "Turkiye": "Turquia", "Uruguay": "Uruguai", "Uzbekistan": "Uzbequistão", "South Africa": "África do Sul", "Austria": "Áustria"};
 
 function traduzTime(nomeEN){
   if(TRADUCAO_TIMES[nomeEN]) return TRADUCAO_TIMES[nomeEN];
@@ -1522,40 +1522,47 @@ async function buscarResultadosAPI(){
   if(btn){ btn.disabled=true; btn.textContent="⏳ Buscando..."; }
   showSv("Consultando resultados na API...");
   try{
-    var resp = await fetch(API_FOOTBALL_URL+"/fixtures?league=1&season=2026", {
-      headers: { "x-apisports-key": API_FOOTBALL_KEY }
+    var resp = await fetch(API_FOOTBALL_URL+"/competitions/WC/matches", {
+      headers: { "X-Auth-Token": API_FOOTBALL_KEY }
     });
     if(!resp.ok){
-      throw new Error("Erro HTTP "+resp.status+" — verifique a API Key ou limite diário.");
+      var bodyTxt = "";
+      try{ bodyTxt = JSON.stringify(await resp.json()); }catch(e){}
+      throw new Error("Erro HTTP "+resp.status+" "+bodyTxt+" — verifique a API Key ou limite (10 req/min).");
     }
     var data = await resp.json();
-    if(data.errors && Object.keys(data.errors).length>0){
-      throw new Error("API retornou erro: "+JSON.stringify(data.errors));
-    }
-    var fixtures = data.response || [];
+    var fixtures = data.matches || [];
     var encerrados = fixtures.filter(function(fx){
-      var st = fx.fixture && fx.fixture.status ? fx.fixture.status.short : "";
-      return st==="FT" || st==="AET" || st==="PEN"; // Full Time, Extra Time, Penalties
+      return fx.status==="FINISHED";
     });
 
     var atualizados = 0, naoEncontrados = [], jaAtualizados = 0;
     encerrados.forEach(function(fx){
-      var nomeA_en = fx.teams.home.name;
-      var nomeB_en = fx.teams.away.name;
+      var nomeA_en = fx.homeTeam && fx.homeTeam.name;
+      var nomeB_en = fx.awayTeam && fx.awayTeam.name;
+      if(!nomeA_en || !nomeB_en){
+        naoEncontrados.push("Jogo #"+fx.id+" (time não definido ainda)");
+        return;
+      }
       var nomeA_pt = traduzTime(nomeA_en);
       var nomeB_pt = traduzTime(nomeB_en);
       if(!nomeA_pt || !nomeB_pt){
-        naoEncontrados.push(nomeA_en+" x "+nomeB_en+" (tradução não encontrada)");
+        naoEncontrados.push(nomeA_en+" x "+nomeB_en+" (tradução não encontrada — avise o JP)");
         return;
       }
-      var match = encontrarJogoCorrespondente(nomeA_pt, nomeB_pt, fx.fixture.date);
+      var match = encontrarJogoCorrespondente(nomeA_pt, nomeB_pt, fx.utcDate);
       if(!match){
         naoEncontrados.push(nomeA_pt+" x "+nomeB_pt+" (jogo não localizado no sistema)");
         return;
       }
       var jid = match.jogo.id;
-      var golsA = fx.goals.home, golsB = fx.goals.away;
-      if(golsA===null || golsB===null){
+      var ft = fx.score && fx.score.fullTime ? fx.score.fullTime : {};
+      var golsA = ft.home, golsB = ft.away;
+      // Se houve prorrogação/pênaltis, prioriza o placar de prorrogação se existir, senão mantém fullTime
+      if((golsA===null||golsA===undefined) && fx.score && fx.score.extraTime){
+        golsA = fx.score.extraTime.home; golsB = fx.score.extraTime.away;
+      }
+      if(golsA===null || golsA===undefined || golsB===null || golsB===undefined){
         naoEncontrados.push(nomeA_pt+" x "+nomeB_pt+" (placar indisponível)");
         return;
       }
@@ -1572,7 +1579,7 @@ async function buscarResultadosAPI(){
         gA:gA, gB:gB,
         caA: antigo.caA||0, cvA: antigo.cvA||0,
         caB: antigo.caB||0, cvB: antigo.cvB||0,
-        at: new Date().toISOString(), origem:"api-football"
+        at: new Date().toISOString(), origem:"football-data.org"
       };
       atualizados++;
     });
@@ -1593,7 +1600,7 @@ async function buscarResultadosAPI(){
     alert(msg);
   }catch(e){
     hideSv();
-    alert("❌ Erro ao buscar resultados: "+e.message+"\n\nVerifique sua conexão, a API Key, ou se o limite diário (100 req) foi atingido.");
+    alert("❌ Erro ao buscar resultados: "+e.message+"\n\nVerifique sua conexão, a API Key, ou se o limite (10 req/min) foi atingido. Evite clicar várias vezes seguidas.");
   }finally{
     if(btn){ btn.disabled=false; btn.textContent="🔄 Atualizar Resultados (API)"; }
   }
